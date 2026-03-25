@@ -3,28 +3,37 @@ use cpu_time::ProcessTime;
 use linux_embedded_hal::I2cdev;
 use std::time::{Duration, Instant};
 
-const TARGET_HZ: f64 = 100.0;
 const RUN_SECS: u64 = 10;
 
 fn main() {
-    let bus = std::env::args().nth(1).unwrap_or_else(|| "/dev/i2c-4".to_string());
+    let args: Vec<String> = std::env::args().collect();
+
+    let bus = args.iter().position(|a| a == "--bus")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.clone())
+        .unwrap_or_else(|| "/dev/i2c-4".to_string());
+
+    let freq: f64 = args.iter().position(|a| a == "--freq")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(50.0);
+
     let i2c = I2cdev::new(&bus).unwrap_or_else(|e| panic!("failed to open {bus}: {e}"));
     let imu = Bmi088::new(i2c, Config::default())
         .unwrap_or_else(|e| panic!("BMI088 init failed: {e:?}"));
     let mut ahrs = Bmi088Ahrs::new(imu, 0.1);
 
-    let target = Duration::from_secs_f64(1.0 / TARGET_HZ);
+    let target = Duration::from_secs_f64(1.0 / freq);
     let run_for = Duration::from_secs(RUN_SECS);
-    let expected_samples = (TARGET_HZ * RUN_SECS as f64) as usize;
-    let mut intervals: Vec<f64> = Vec::with_capacity(expected_samples);
+    let mut intervals: Vec<f64> = Vec::with_capacity((freq * RUN_SECS as f64) as usize);
 
     println!("Warming up...");
     for _ in 0..10 {
-        let _ = ahrs.get_quaternion(0.01).expect("read failed");
+        let _ = ahrs.get_quaternion(1.0 / freq as f32).expect("read failed");
         std::thread::sleep(target);
     }
 
-    println!("Benchmarking at {TARGET_HZ} Hz for {RUN_SECS}s...");
+    println!("Benchmarking at {freq} Hz for {RUN_SECS}s...");
 
     let wall_start = Instant::now();
     let cpu_start = ProcessTime::now();
@@ -65,8 +74,8 @@ fn main() {
 
     println!();
     println!("=== results ({n} samples) ===");
-    println!("  rate     {:6.2} Hz  (target {TARGET_HZ:.0} Hz)", 1000.0 / mean);
-    println!("  mean     {:6.3} ms  (target {:.3} ms)", mean, 1000.0 / TARGET_HZ);
+    println!("  rate     {:6.2} Hz  (target {freq:.0} Hz)", 1000.0 / mean);
+    println!("  mean     {:6.3} ms  (target {:.3} ms)", mean, 1000.0 / freq);
     println!("  std dev  {:6.3} ms", std_dev);
     println!("  min      {:6.3} ms", min);
     println!("  p95      {:6.3} ms", p95);

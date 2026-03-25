@@ -8,11 +8,18 @@ use std::time::{Duration, Instant};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+
     let bus = args.iter().position(|a| a == "--bus")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
         .unwrap_or("/dev/i2c-4")
         .to_string();
+
+    let freq: f64 = args.iter().position(|a| a == "--freq")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(50.0);
+
     let stream = args.contains(&"--stream".to_string());
 
     let i2c = I2cdev::new(&bus).unwrap_or_else(|e| panic!("failed to open {bus}: {e}"));
@@ -21,17 +28,21 @@ fn main() {
     let ahrs = Bmi088Ahrs::new(imu, 0.1);
 
     if stream {
-        run_stream(ahrs);
+        run_stream(ahrs, freq);
     } else {
-        run_print(ahrs);
+        run_print(ahrs, freq);
     }
 }
 
-fn run_print(mut ahrs: Bmi088Ahrs<I2cdev>) {
+fn run_print(mut ahrs: Bmi088Ahrs<I2cdev>, freq: f64) {
+    let interval = Duration::from_secs_f64(1.0 / freq);
     let mut last = Instant::now();
+    let mut next_tick = last + interval;
+
     loop {
-        let dt = last.elapsed().as_secs_f32();
-        last = Instant::now();
+        let now = Instant::now();
+        let dt = now.duration_since(last).as_secs_f32();
+        last = now;
 
         let [w, x, y, z] = ahrs.get_quaternion(dt).expect("sensor read failed");
         let temp = ahrs.imu().read_temperature().expect("temp read failed");
@@ -41,20 +52,25 @@ fn run_print(mut ahrs: Bmi088Ahrs<I2cdev>) {
             w, x, y, z, temp
         );
 
-        thread::sleep(Duration::from_millis(10));
+        next_tick += interval;
+        let now = Instant::now();
+        if now < next_tick {
+            thread::sleep(next_tick - now);
+        }
     }
 }
 
-fn run_stream(mut ahrs: Bmi088Ahrs<I2cdev>) {
+fn run_stream(mut ahrs: Bmi088Ahrs<I2cdev>, freq: f64) {
     let listener = TcpListener::bind("0.0.0.0:1234").expect("failed to bind port 1234");
-    println!("Waiting for connection on port 1234...");
+    println!("Waiting for connection on port 1234 at {freq} Hz...");
+
+    let interval = Duration::from_secs_f64(1.0 / freq);
 
     for incoming in listener.incoming() {
         let mut stream = incoming.expect("connection error");
         stream.set_nodelay(true).ok();
         println!("Client connected: {}", stream.peer_addr().unwrap());
 
-        let interval = Duration::from_millis(33); // ~30 Hz
         let mut last = Instant::now();
         let mut next_tick = last + interval;
 
