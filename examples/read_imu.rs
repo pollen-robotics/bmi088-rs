@@ -1,24 +1,30 @@
-use bmi088::{Bmi088, Config};
+use bmi088::{Bmi088Ahrs, Bmi088, Config};
 use linux_embedded_hal::I2cdev;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn main() {
     let bus = std::env::args().nth(1).unwrap_or_else(|| "/dev/i2c-4".to_string());
     let i2c = I2cdev::new(&bus).unwrap_or_else(|e| panic!("failed to open {bus}: {e}"));
-    let mut imu = Bmi088::new(i2c, Config::default())
+
+    let imu = Bmi088::new(i2c, Config::default())
         .unwrap_or_else(|e| panic!("failed to initialise BMI088 on {bus}: {e:?}"));
+    let mut ahrs = Bmi088Ahrs::new(imu, 0.1);
+
+    let mut last = Instant::now();
 
     loop {
-        let (ax, ay, az) = imu.read_accelerometer().expect("accel read failed");
-        let (gx, gy, gz) = imu.read_gyroscope().expect("gyro read failed");
-        let temp = imu.read_temperature().expect("temp read failed");
+        let dt = last.elapsed().as_secs_f32();
+        last = Instant::now();
+
+        let [w, x, y, z] = ahrs.get_quaternion(dt).expect("sensor read failed");
+        let temp = ahrs.imu().read_temperature().expect("temp read failed");
 
         println!(
-            "accel [{:7.3} {:7.3} {:7.3}] g  |  gyro [{:8.4} {:8.4} {:8.4}] rad/s  |  {:.1} °C",
-            ax, ay, az, gx, gy, gz, temp
+            "quat [{:6.3} {:6.3} {:6.3} {:6.3}]  |  {:.1} °C",
+            w, x, y, z, temp
         );
 
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(10));
     }
 }

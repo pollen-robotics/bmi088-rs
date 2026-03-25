@@ -12,7 +12,12 @@
 //! let temp = imu.read_temperature()?;              // °C
 //! ```
 
-#![no_std]
+#![cfg_attr(not(feature = "ahrs"), no_std)]
+
+#[cfg(feature = "ahrs")]
+mod fusion;
+#[cfg(feature = "ahrs")]
+pub use fusion::Bmi088Ahrs;
 
 use embedded_hal::i2c::I2c;
 
