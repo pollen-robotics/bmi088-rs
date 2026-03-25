@@ -10,6 +10,7 @@ ahrs     = { version = "0.8.0", features = ["std"] }
 nalgebra = "0.34.1"
 
 [dev-dependencies]
+cpu-time = "1.0.0"
 linux-embedded-hal = "0.4"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-pickle = "1.2.0"
