@@ -2,15 +2,14 @@
 name = "bmi088"
 version = "0.1.0"
 edition = "2021"
-description = "no_std driver for the BMI088 6-axis IMU (accelerometer + gyroscope)"
+description = "Driver for the BMI088 6-axis IMU (accelerometer + gyroscope) with Madgwick filter"
 
 [dependencies]
 embedded-hal = "1.0"
-ahrs      = { version = "0.8.0", optional = true, features = ["std"] }
-nalgebra  = { version = "0.34.1", optional = true }
+ahrs     = { version = "0.8.0", features = ["std"] }
+nalgebra = "0.34.1"
 
 [dev-dependencies]
 linux-embedded-hal = "0.4"
-
-[features]
-ahrs = ["dep:ahrs", "dep:nalgebra"]
+serde = { version = "1.0.228", features = ["derive"] }
+serde-pickle = "1.2.0"

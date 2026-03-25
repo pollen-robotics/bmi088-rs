@@ -1,22 +1,18 @@
-//! no_std driver for the Bosch BMI088 6-axis IMU (accelerometer + gyroscope).
+//! Driver for the Bosch BMI088 6-axis IMU (accelerometer + gyroscope).
 //!
 //! Uses the `embedded-hal` I2C trait, making it portable across any HAL.
 //!
 //! # Example
 //! ```ignore
 //! let config = Config::default(); // 3G accel, 500 DPS gyro, 100 Hz bandwidth
-//! let mut imu = Bmi088::new(i2c, config)?;
+//! let mut imu = Bmi088Ahrs::new(Bmi088::new(i2c, config)?, 0.1);
 //!
-//! let (ax, ay, az) = imu.read_accelerometer()?;   // g
+//! let (ax, ay, az) = imu.imu().read_accelerometer()?;   // g
 //! let (gx, gy, gz) = imu.read_gyroscope()?;       // rad/s
 //! let temp = imu.read_temperature()?;              // °C
 //! ```
 
-#![cfg_attr(not(feature = "ahrs"), no_std)]
-
-#[cfg(feature = "ahrs")]
 mod fusion;
-#[cfg(feature = "ahrs")]
 pub use fusion::Bmi088Ahrs;
 
 use embedded_hal::i2c::I2c;
