@@ -35,10 +35,10 @@ fn main() {
         let _ = ahrs.get_quaternion(dt).expect("read failed");
 
         let now = Instant::now();
-        intervals.push(now.duration_since(last).as_secs_f64() * 1000.0);
+        let elapsed = now.duration_since(last);
+        intervals.push(elapsed.as_secs_f64() * 1000.0);
         last = now;
 
-        let elapsed = last.elapsed();
         if elapsed < target {
             std::thread::sleep(target - elapsed);
         }
