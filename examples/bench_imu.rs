@@ -29,18 +29,20 @@ fn main() {
     let wall_start = Instant::now();
     let cpu_start = ProcessTime::now();
     let mut last = Instant::now();
+    let mut next_tick = last + target;
 
     while wall_start.elapsed() < run_for {
-        let dt = last.elapsed().as_secs_f32();
-        let _ = ahrs.get_quaternion(dt).expect("read failed");
-
         let now = Instant::now();
-        let elapsed = now.duration_since(last);
-        intervals.push(elapsed.as_secs_f64() * 1000.0);
+        let dt = now.duration_since(last).as_secs_f32();
+        intervals.push(now.duration_since(last).as_secs_f64() * 1000.0);
         last = now;
 
-        if elapsed < target {
-            std::thread::sleep(target - elapsed);
+        let _ = ahrs.get_quaternion(dt).expect("read failed");
+
+        next_tick += target;
+        let now = Instant::now();
+        if now < next_tick {
+            std::thread::sleep(next_tick - now);
         }
     }
 

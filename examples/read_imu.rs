@@ -56,10 +56,12 @@ fn run_stream(mut ahrs: Bmi088Ahrs<I2cdev>) {
 
         let interval = Duration::from_millis(33); // ~30 Hz
         let mut last = Instant::now();
+        let mut next_tick = last + interval;
 
         loop {
-            let dt = last.elapsed().as_secs_f32();
-            last = Instant::now();
+            let now = Instant::now();
+            let dt = now.duration_since(last).as_secs_f32();
+            last = now;
 
             let [w, x, y, z] = match ahrs.get_quaternion(dt) {
                 Ok(q) => q,
@@ -82,9 +84,10 @@ fn run_stream(mut ahrs: Bmi088Ahrs<I2cdev>) {
                 break;
             }
 
-            let elapsed = last.elapsed();
-            if elapsed < interval {
-                thread::sleep(interval - elapsed);
+            next_tick += interval;
+            let now = Instant::now();
+            if now < next_tick {
+                thread::sleep(next_tick - now);
             }
         }
 
