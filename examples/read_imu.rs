@@ -4,7 +4,7 @@ use std::thread;
 use std::time::Duration;
 
 fn main() {
-    let bus = std::env::args().nth(1).unwrap_or_else(|| "/dev/i2c-1".to_string());
+    let bus = std::env::args().nth(1).unwrap_or_else(|| "/dev/i2c-4".to_string());
     let i2c = I2cdev::new(&bus).unwrap_or_else(|e| panic!("failed to open {bus}: {e}"));
     let mut imu = Bmi088::new(i2c, Config::default())
         .unwrap_or_else(|e| panic!("failed to initialise BMI088 on {bus}: {e:?}"));
