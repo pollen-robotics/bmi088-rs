@@ -18,8 +18,8 @@ pub use fusion::Bmi088Ahrs;
 use embedded_hal::i2c::I2c;
 
 // I2C addresses
-const ACC_ADDR: u8 = 0x18;
-const GYRO_ADDR: u8 = 0x69;
+const ACC_ADDR: u8 = 0x19;
+const GYRO_ADDR: u8 = 0x68;
 
 // Accelerometer registers
 const REG_ACC_CONF: u8 = 0x40;
