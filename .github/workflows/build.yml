@@ -1,0 +1,65 @@
+name: Build
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build for Raspberry Pi Zero 2W (ARM64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install cross
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cross
+
+      - name: Build examples for aarch64
+        run: |
+          cross build --release --target aarch64-unknown-linux-gnu \
+            --example read_imu \
+            --example bench_imu
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist
+          cp target/aarch64-unknown-linux-gnu/release/examples/read_imu dist/
+          cp target/aarch64-unknown-linux-gnu/release/examples/bench_imu dist/
+          cd dist && tar czf bmi088-aarch64-linux.tar.gz read_imu bench_imu
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/bmi088-aarch64-linux.tar.gz
+          body: |
+            ## BMI088 ${{ github.ref_name }}
+
+            Cross-compiled binaries for Raspberry Pi Zero 2W (ARM64).
+
+            ### Download and deploy
+
+            ```bash
+            # On the Pi Zero 2W:
+            wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/bmi088-aarch64-linux.tar.gz
+            tar xzf bmi088-aarch64-linux.tar.gz
+            ./read_imu
+            ```
+
+            ### Included
+
+            - **read_imu**: Stream IMU data (accelerometer + gyroscope + Madgwick fusion)
+            - **bench_imu**: Timing benchmark
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
