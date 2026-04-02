@@ -195,6 +195,52 @@ impl<E> From<E> for Error<E> {
     }
 }
 
+// ── Axis remapping ───────────────────────────────────────────────────────────
+
+/// Software axis remapping applied after reading raw sensor data.
+///
+/// Defines a permutation and optional sign flip for each output axis,
+/// compensating for the physical mounting orientation of the IMU on the board.
+///
+/// The BMI088 does not support hardware axis remapping (unlike BNO055),
+/// so remapping is done in software here.
+///
+/// # Example — rotate 90° clockwise around Z (viewed from top):
+/// ```
+/// // Sensor X → output -Y, Sensor Y → output X, Sensor Z → output Z
+/// let remap = AxisRemap { axes: [1, 0, 2], signs: [1.0, -1.0, 1.0] };
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct AxisRemap {
+    /// Source axis index for each output axis `[x_out, y_out, z_out]`.
+    /// `0` = sensor X, `1` = sensor Y, `2` = sensor Z.
+    pub axes: [usize; 3],
+    /// Sign multiplier for each output axis (`1.0` or `-1.0`).
+    pub signs: [f32; 3],
+}
+
+impl Default for AxisRemap {
+    /// Identity mapping — axes unchanged, no sign flips.
+    fn default() -> Self {
+        Self {
+            axes: [0, 1, 2],
+            signs: [1.0, 1.0, 1.0],
+        }
+    }
+}
+
+impl AxisRemap {
+    /// Apply the remapping to a raw `(x, y, z)` reading.
+    pub fn apply(&self, v: (f32, f32, f32)) -> (f32, f32, f32) {
+        let arr = [v.0, v.1, v.2];
+        (
+            self.signs[0] * arr[self.axes[0]],
+            self.signs[1] * arr[self.axes[1]],
+            self.signs[2] * arr[self.axes[2]],
+        )
+    }
+}
+
 // ── Driver ───────────────────────────────────────────────────────────────────
 
 /// BMI088 driver.
@@ -202,6 +248,8 @@ pub struct Bmi088<I2C> {
     i2c: I2C,
     acc_range: AccRange,
     gyro_range: GyroRange,
+    /// Software axis remapping applied to all accelerometer and gyroscope readings.
+    axis_remap: AxisRemap,
 }
 
 impl<I2C: I2c> Bmi088<I2C> {
@@ -223,10 +271,19 @@ impl<I2C: I2c> Bmi088<I2C> {
             i2c,
             acc_range: config.acc_range,
             gyro_range: config.gyro_range,
+            axis_remap: AxisRemap::default(),
         })
     }
 
-    /// Read accelerometer. Returns `(x, y, z)` in **g**.
+    /// Set software axis remapping applied to all sensor readings.
+    ///
+    /// Use this to compensate for the physical mounting orientation of the IMU.
+    /// The BMI088 has no hardware remapping registers, so this is done in software.
+    pub fn set_axis_remap(&mut self, remap: AxisRemap) {
+        self.axis_remap = remap;
+    }
+
+    /// Read accelerometer. Returns `(x, y, z)` in **g** (after axis remapping).
     pub fn read_accelerometer(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
         let mut buf = [0u8; 6];
         self.i2c.write_read(ACC_ADDR, &[REG_ACC_X_LSB], &mut buf)?;
@@ -235,16 +292,16 @@ impl<I2C: I2c> Bmi088<I2C> {
         let x = i16::from_le_bytes([buf[0], buf[1]]) as f32 / sens;
         let y = i16::from_le_bytes([buf[2], buf[3]]) as f32 / sens;
         let z = i16::from_le_bytes([buf[4], buf[5]]) as f32 / sens;
-        Ok((x, y, z))
+        Ok(self.axis_remap.apply((x, y, z)))
     }
 
-    /// Read accelerometer. Returns `(x, y, z)` in **m/s²**.
+    /// Read accelerometer. Returns `(x, y, z)` in **m/s²** (after axis remapping).
     pub fn read_accelerometer_ms2(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
         let (x, y, z) = self.read_accelerometer()?;
         Ok((x * 9.80665, y * 9.80665, z * 9.80665))
     }
 
-    /// Read gyroscope. Returns `(x, y, z)` in **rad/s**.
+    /// Read gyroscope. Returns `(x, y, z)` in **rad/s** (after axis remapping).
     pub fn read_gyroscope(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
         let mut buf = [0u8; 6];
         self.i2c.write_read(GYRO_ADDR, &[REG_GYRO_RATE_X_LSB], &mut buf)?;
@@ -254,10 +311,10 @@ impl<I2C: I2c> Bmi088<I2C> {
         let x = i16::from_le_bytes([buf[0], buf[1]]) as f32 / sens * to_rad;
         let y = i16::from_le_bytes([buf[2], buf[3]]) as f32 / sens * to_rad;
         let z = i16::from_le_bytes([buf[4], buf[5]]) as f32 / sens * to_rad;
-        Ok((x, y, z))
+        Ok(self.axis_remap.apply((x, y, z)))
     }
 
-    /// Read gyroscope. Returns `(x, y, z)` in **degrees/s**.
+    /// Read gyroscope. Returns `(x, y, z)` in **degrees/s** (after axis remapping).
     pub fn read_gyroscope_dps(&mut self) -> Result<(f32, f32, f32), Error<I2C::Error>> {
         let mut buf = [0u8; 6];
         self.i2c.write_read(GYRO_ADDR, &[REG_GYRO_RATE_X_LSB], &mut buf)?;
@@ -266,7 +323,7 @@ impl<I2C: I2c> Bmi088<I2C> {
         let x = i16::from_le_bytes([buf[0], buf[1]]) as f32 / sens;
         let y = i16::from_le_bytes([buf[2], buf[3]]) as f32 / sens;
         let z = i16::from_le_bytes([buf[4], buf[5]]) as f32 / sens;
-        Ok((x, y, z))
+        Ok(self.axis_remap.apply((x, y, z)))
     }
 
     /// Read temperature. Returns value in **°C**.

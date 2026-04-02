@@ -24,12 +24,15 @@ impl<I2C: I2c> Bmi088Ahrs<I2C> {
         }
     }
 
-    /// Read accelerometer and gyroscope, then update the Madgwick filter.
+    /// Read accelerometer and gyroscope, update the Madgwick filter, and return
+    /// both the gyroscope reading and the orientation quaternion in one call.
     ///
     /// * `dt` — time since last call, in seconds.
     ///
-    /// Returns the orientation quaternion as `[w, x, y, z]`.
-    pub fn get_quaternion(&mut self, dt: f32) -> Result<[f32; 4], Error<I2C::Error>> {
+    /// Returns `(gyro, quaternion)` where:
+    /// - `gyro` is `[gx, gy, gz]` in **rad/s** (after any axis remapping)
+    /// - `quaternion` is `[w, x, y, z]` (body→world, scalar-first)
+    pub fn update(&mut self, dt: f32) -> Result<([f32; 3], [f32; 4]), Error<I2C::Error>> {
         let (ax, ay, az) = self.imu.read_accelerometer()?;
         let (gx, gy, gz) = self.imu.read_gyroscope()?;
 
@@ -49,7 +52,17 @@ impl<I2C: I2c> Bmi088Ahrs<I2C> {
         };
 
         let q = q.into_inner();
-        Ok([q.w as f32, q.i as f32, q.j as f32, q.k as f32])
+        Ok(([gx, gy, gz], [q.w as f32, q.i as f32, q.j as f32, q.k as f32]))
+    }
+
+    /// Read accelerometer and gyroscope, then update the Madgwick filter.
+    ///
+    /// * `dt` — time since last call, in seconds.
+    ///
+    /// Returns the orientation quaternion as `[w, x, y, z]`.
+    pub fn get_quaternion(&mut self, dt: f32) -> Result<[f32; 4], Error<I2C::Error>> {
+        let (_, quat) = self.update(dt)?;
+        Ok(quat)
     }
 
     /// Access the underlying driver (e.g. to read temperature).
