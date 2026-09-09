@@ -32,7 +32,34 @@ impl<I2C: I2c> Bmi088Ahrs<I2C> {
     /// Returns `(gyro, quaternion)` where:
     /// - `gyro` is `[gx, gy, gz]` in **rad/s** (after any axis remapping)
     /// - `quaternion` is `[w, x, y, z]` (body→world, scalar-first)
+    ///
+    /// A caller that also publishes acceleration wants [`Self::update_all`] instead: this
+    /// reads the accelerometer to feed the filter and then drops it, so asking for it
+    /// afterwards reads the same six registers a second time.
     pub fn update(&mut self, dt: f32) -> Result<([f32; 3], [f32; 4]), Error<I2C::Error>> {
+        let (_, gyro, quat) = self.update_all(dt)?;
+        Ok((gyro, quat))
+    }
+
+    /// [`Self::update`], plus the accelerometer sample it read to get there.
+    ///
+    /// * `dt` — time since last call, in seconds.
+    ///
+    /// Returns `(accel, gyro, quaternion)` where:
+    /// - `accel` is `[ax, ay, az]` in **m/s²** (after any axis remapping)
+    /// - `gyro` is `[gx, gy, gz]` in **rad/s** (after any axis remapping)
+    /// - `quaternion` is `[w, x, y, z]` (body→world, scalar-first)
+    ///
+    /// Exists because the two chips are read over I²C one transaction each, and a consumer
+    /// that publishes a full sample — accel, gyro and orientation — had to call
+    /// [`Bmi088::read_accelerometer_ms2`] after `update` to get the accel back, making three
+    /// transactions a sample out of two. On a shared bus read at 100 Hz that third one was a
+    /// third of the traffic, and of the CPU: the driver work per transaction dominates, not
+    /// the filter.
+    pub fn update_all(
+        &mut self,
+        dt: f32,
+    ) -> Result<([f32; 3], [f32; 3], [f32; 4]), Error<I2C::Error>> {
         let (ax, ay, az) = self.imu.read_accelerometer()?;
         let (gx, gy, gz) = self.imu.read_gyroscope()?;
 
@@ -52,7 +79,14 @@ impl<I2C: I2c> Bmi088Ahrs<I2C> {
         };
 
         let q = q.into_inner();
-        Ok(([gx, gy, gz], [q.w as f32, q.i as f32, q.j as f32, q.k as f32]))
+        // The filter takes acceleration in g (it only ever normalises it); a caller wants the
+        // physical unit, which is what `read_accelerometer_ms2` would have handed back.
+        const G: f32 = 9.80665;
+        Ok((
+            [ax * G, ay * G, az * G],
+            [gx, gy, gz],
+            [q.w as f32, q.i as f32, q.j as f32, q.k as f32],
+        ))
     }
 
     /// Read accelerometer and gyroscope, then update the Madgwick filter.
