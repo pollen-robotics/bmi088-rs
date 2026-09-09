@@ -1,26 +1,31 @@
-//! What a sample costs, three ways.
+//! What a sample costs, and which part of it costs that.
 //!
-//! The point of running this is the CPU line, and the reason it has three modes is that on a
-//! Radxa Zero 3 reading this chip at 100 Hz, ~90% of the cost is *system* time — the per-
-//! transaction driver work — and almost none of it is the Madgwick update. So the number that
-//! moves is the number of I²C transactions per sample, and the modes differ only in that:
+//! Five modes, run back to back at one rate, so the cost can be attributed instead of guessed
+//! at. They differ only in what happens between two sleeps:
 //!
-//! - `update`      — accel + gyro, returns gyro and the quaternion.      2 transactions
-//! - `update_all`  — the same reads, and the accel comes back too.       2 transactions
-//! - `three-reads` — `update`, then `read_accelerometer_ms2` for the     3 transactions
-//!                   accel it just dropped. What a consumer publishing
-//!                   a full sample had to do before `update_all`.
+//! - `sleep only`  — nothing at all. **The floor**: what it costs merely to  0 transactions
+//!                   be woken at this rate.
+//! - `filter only` — one Madgwick update on constant vectors, no bus.        0 transactions
+//! - `update`      — accel + gyro, returns gyro and the quaternion.         2 transactions
+//! - `update_all`  — the same reads, and the accel comes back too.          2 transactions
+//! - `three-reads` — `update`, then `read_accelerometer_ms2` for the        3 transactions
+//!                   accel it just dropped. What a consumer publishing a
+//!                   full sample had to do before `update_all`.
 //!
-//! Nothing else about the sensor differs between them, so the CPU spread between the last one
-//! and the other two is the price of that extra transaction, measured rather than reasoned
-//! about.
+//! On a Radxa Zero 3 at 100 Hz the last three came out at 4.44%, 4.46% and 4.53% of a core:
+//! a whole I²C transaction is worth ~0.09 points, or ~9 µs, against ~440 µs a sample. So the
+//! bus is not what a sample costs, which is what the first two modes are here to pin down —
+//! if `sleep only` is most of that 4.4%, the cost is being woken a hundred times a second and
+//! the only levers are the rate or not running at all.
 //!
 //! Stop anything else that owns the bus first (on a duck: `sudo systemctl stop tofd`), or the
 //! contention lands in these numbers.
 
+use ahrs::{Ahrs, Madgwick};
 use bmi088::{Bmi088, Bmi088Ahrs, Config};
 use cpu_time::ProcessTime;
 use linux_embedded_hal::I2cdev;
+use nalgebra::Vector3;
 use std::time::{Duration, Instant};
 
 const RUN_SECS: u64 = 10;
@@ -45,6 +50,18 @@ fn main() {
     let mut ahrs = Bmi088Ahrs::new(imu, 0.1);
 
     println!("bus {bus}, {freq} Hz, {RUN_SECS}s a mode");
+
+    bench("sleep only  (0 reads)", freq, &mut ahrs, |_, _| {});
+
+    // The same filter the driver runs, on vectors that never change: a gyro at rest and one g
+    // of gravity. Madgwick does not care that the input is constant — it does the same
+    // arithmetic either way — so this is the filter's cost with the bus taken out of it.
+    let mut filter = Madgwick::new(1.0 / freq, 0.1);
+    let gyro = Vector3::new(0.0f64, 0.0, 0.0);
+    let accel = Vector3::new(0.0f64, 0.0, 1.0);
+    bench("filter only (0 reads)", freq, &mut ahrs, |_, _| {
+        let _ = filter.update_imu(&gyro, &accel);
+    });
 
     bench("update      (2 reads)", freq, &mut ahrs, |ahrs, dt| {
         let _ = ahrs.update(dt).expect("read failed");
