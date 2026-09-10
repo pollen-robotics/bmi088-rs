@@ -1,6 +1,6 @@
 [package]
 name = "bmi088"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 description = "Driver for the BMI088 6-axis IMU (accelerometer + gyroscope) with Madgwick filter"
 
